@@ -1,0 +1,683 @@
+
+
+```{r setup, include=FALSE}
+
+
+library(tidyverse)
+library(magrittr)
+library(ggrepel)
+library(vroom)
+library(ggdendro)
+library(patchwork)
+
+filter <- dplyr::filter
+
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+read_tsv("./Permutation/annotated_perm_intestine44_age.tsv") -> data_filtered
+
+
+data_filtered%>%distinct(chr_base)
+```
+
+
+
+
+
+
+
+```{r}
+data_filtered %>%
+select(1:45) %>%
+    column_to_rownames('chr_base') %>%
+  na.omit() %>%
+  t() %>% 
+# To calculate the PCA, we will center the data, but not scale it, because 
+# methylation data is already scaled from 0% to 100%.
+  prcomp(center = T, scale = F) -> pca_data_filt
+
+######
+
+### format results for plotting
+# Get the percent variance explained by each PC and save it to a table for
+# plotting
+tibble(var_explained = ((pca_data_filt$sdev) ^ 2 / (sum(pca_data_filt$sdev ^ 2)))) %>%
+  mutate(PC = colnames(pca_data_filt$x), 
+         PC = factor(PC, PC)) -> pca_data_scree_filt
+
+# The coordinates to plot the PCA are in the x table of the PCA object.
+pca_data_filt$x %>%
+  as.data.frame() %>%
+  rownames_to_column('filename') %>%
+  # Add variables back in to color by.
+   mutate(Age = case_when(str_detect(filename, 'Y') ~ '4mo',
+                           str_detect(filename, 'M') ~ '12mo', 
+                           str_detect(filename, 'N') ~ '18mo', 
+                           str_detect(filename, 'O') ~ '24mo'),
+          Organ = case_when(str_detect(filename, 'YU|MU|NU|OU') ~ 'USI',
+                           str_detect(filename, 'YL|ML|NL|OL') ~ 'LSI', 
+                           str_detect(filename, 'YC|MC|NC|OC') ~ 'COL'),
+          gfp = case_when(str_detect(filename, '_pos') ~ 'pos',
+                           str_detect(filename, '_neg') ~ 'neg'),
+         batch = case_when(str_detect(filename, '_24B') ~ '24B',
+                           str_detect(filename, '_34B') ~ '34B', 
+                           str_detect(filename, '39a') ~ '39a',
+                          str_detect(filename, '39b') ~ '39b',
+                           str_detect(filename, '60a') ~ '60a',
+                           str_detect(filename, '60b') ~ '60b',
+                          str_detect(filename, 'nova.cov.gz') ~ 'nova'),
+         sample = case_when(str_detect(filename, 'YU') ~ 'YU',
+                           str_detect(filename, 'YL') ~ 'YL', 
+                           str_detect(filename, 'YC') ~ 'YC',
+                           str_detect(filename, 'MU') ~ 'MU',
+                           str_detect(filename, 'ML') ~ 'ML', 
+                           str_detect(filename, 'MC') ~ 'MC',
+                           str_detect(filename, 'NU') ~ 'NU',
+                           str_detect(filename, 'NL') ~ 'NL', 
+                           str_detect(filename, 'NC') ~ 'NC',
+                           str_detect(filename, 'OU') ~ 'OU', 
+                           str_detect(filename, 'OL') ~ 'OL', 
+                           str_detect(filename, 'OC') ~ 'OC'),
+         label = str_remove_all(filename, '.cov.gz'),
+           label = str_remove_all(filename, '_24B'),
+          label = str_remove_all(filename,  '_34B'),
+          label = str_remove_all(filename,  '_39a'),
+          label = str_remove_all(filename,  '_39b'),
+              label = str_remove_all(filename,  '_60a'),
+          label = str_remove_all(filename,  '_60b'),
+            label = str_remove_all(filename,  '_gfp'),
+                     label = str_remove_all(filename,  './'),
+         label = str_remove_all(filename, '.cov')) -> pca_data_filt
+
+######
+```
+
+
+
+
+
+
+<!-- ```{r,fig.width=5.5, fig.height=4} -->
+
+<!-- # PCA colored by age -->
+<!-- pca_data_filt %>%  -->
+<!--   tidyr::unite(group,c(sample,batch),sep="_", remove=FALSE) %>% -->
+<!--   mutate(Age=factor(Age,levels=c("4mo","12mo","18mo","24mo")))%>% -->
+<!-- ggplot(aes(x=PC1, y=PC2)) + -->
+<!--   geom_point(aes(fill=Age, shape=Organ), size=5) + -->
+<!--    scale_fill_manual(name = 'Age', labels= c("4mo","12mo","18mo","24mo"),values = c("4mo"="forestgreen","12mo"="purple", "18mo"="tomato2","24mo"="gold3")) + -->
+<!--  scale_shape_manual(name = 'Organ', values = c("COL"=21,"LSI"=23, "USI"=22)) + -->
+<!--   xlab("PC1(25.6%)")+ -->
+<!--   ylab("PC2(11.4%)")+  -->
+<!--    geom_line(aes(x=PC1, y=PC2, group=group), linetype =3, size=1)+ -->
+<!--   # ggrepel::geom_text_repel(aes(label=filename))+ -->
+<!--   theme_classic()+ -->
+<!--   theme(axis.title.x = element_text(size = 14), axis.title.y = element_text(size = 14), -->
+<!--         axis.text.y= element_text(size = 12, face='bold'),axis.text.x= element_text(size = 12, face='bold'),title =element_text(size = 15, face='bold'))+ -->
+<!--     theme(plot.title = element_text(size = 15, face = "bold"), -->
+<!--              legend.text = element_text(size = 10, face = "bold")) -->
+
+<!-- ``` -->
+
+
+
+
+
+```{r, fig.width=6,fig.height=4.5}
+
+# PCA colored by age
+pca_data_filt %>% 
+  tidyr::unite(group,c(sample,batch),sep="_", remove=FALSE) %>%
+  mutate(Age=factor(Age,levels=c("4mo","12mo","18mo","24mo")))%>%
+ggplot(aes(x=PC1, y=PC2)) +
+  geom_point(aes(fill=Age, shape=Organ), size=7) +
+   scale_fill_manual(name = 'Age', labels= c("4mo","12mo","18mo","24mo"),values = c("forestgreen","purple", "tomato2","gold3")) +
+ scale_shape_manual(name = 'Organ', values = c("COL"=21,"LSI"=23, "USI"=22)) +
+  xlab("PC1 (25.6%)")+
+  ylab("PC2 (11.4%)")+ 
+  coord_cartesian(xlim=c(-2500,2500))+
+   geom_line(aes(x=PC1, y=PC2, group=group), linetype =3, size=1)+
+  # ggrepel::geom_text_repel(aes(label=filename))+
+  theme_classic()+
+  theme(legend.position = c(0.93, 0.6))+
+  theme(axis.title.x = element_text(size = 20), axis.title.y = element_text(size = 20),
+        axis.text.y= element_text(size = 20, face='bold'),axis.text.x= element_text(size = 20, face='bold'),title =element_text(size = 20, face='bold'))+
+  theme(plot.title = element_text(size = 20, face = "bold"),
+          legend.title = element_text(size = 20, face = "bold"),
+             legend.text = element_text(size = 20, face = "bold"))+
+  guides(fill = guide_legend(override.aes = list(color = c("forestgreen","purple", "tomato2","gold3"))))->pB
+
+
+```
+
+
+
+
+
+
+
+```{r}
+
+
+read_tsv("COL_young_diff_cov20.tsv") %>% mutate(sig=neg_log_qvalue > 1.30102 & abs(meth.diff) > 5)->COL_stem
+
+read_tsv("COL_old_diff_cov20.tsv") %>% mutate(sig=neg_log_qvalue > 1.30102 & abs(meth.diff) > 5)->COL_nonstem
+
+
+read_tsv("annotated_COL_age_pos_cov20.txt") %>% tidyr::unite(chr_base, chr,start, sep="_")%>% mutate(sig=neg_log_qvalue > 1.30102 & abs(meth.diff) > 5)->COL_pos
+
+
+read_tsv("annotated_COL_age_neg_cov20.txt") %>% tidyr::unite(chr_base, chr,start, sep="_")%>% mutate(sig=neg_log_qvalue > 1.30102 & abs(meth.diff) > 5)->COL_neg
+
+
+
+read_tsv("annotated_COL_age_pos_cov20.txt") %>% tidyr::unite(chr_base, chr,start, sep="_")%>% mutate(sig=neg_log_qvalue > 1.30102 & abs(meth.diff) > 5)%>% filter(sig==TRUE)
+read_tsv("annotated_COL_age_neg_cov20.txt") %>% tidyr::unite(chr_base, chr,start, sep="_")%>% mutate(sig=neg_log_qvalue > 1.30102 & abs(meth.diff) > 5)%>% filter(sig==TRUE)
+
+```
+
+
+
+
+
+
+
+
+```{r, fig.width=6,fig.height=6}
+
+COL_stem %>% 
+  mutate(meth_change = case_when((neg_log_qvalue > 1.30102 & meth.diff > -5) ~ 'hypo',
+                                  (neg_log_qvalue > 1.30102 & meth.diff < 5) ~ 'hyper',
+                                  TRUE ~ 'no_change'))%>%
+add_count(name = 'sample_count') %>%
+ group_by(meth_change, sig, sample_count) %>% 
+  count() %>% 
+ungroup() %>%
+ filter(sig != 'FALSE') %>%
+ mutate(meth.diff = c(-50,50), 
+         neg_log_qvalue = 17, 
+       label = paste0(n,  '\n',  
+                         round(((n / sample_count) * 100), 1), 
+                         '%')) -> COL_stem_val
+ 
+
+
+COL_stem%>%
+  ggplot(aes(x = meth.diff, y = neg_log_qvalue)) +
+ geom_point(aes(color = case_when((neg_log_qvalue > 1.30102 & meth.diff > 5) ~ 'green',
+                                  (neg_log_qvalue > 1.30102 & meth.diff < -5) ~ 'red',
+                                  TRUE ~ 'gray')),alpha = 3/10) +
+     geom_vline(xintercept = c(-5, 5), linetype = 'dashed', color = 'darkgray') +
+  geom_hline(yintercept = 1.3, linetype = 'dashed', color = 'darkgray') +
+  coord_cartesian(xlim=c(-100,100),ylim = c(0,20))+ 
+    geom_text(data = COL_stem_val, aes(label = label), size = 10) +
+    scale_color_manual(values = c('gray', 'orangered3', 'aquamarine4')) +
+    theme_classic() +
+  theme(legend.position = "none")+
+  ylab("-Log(qvalue)")+
+  xlab("% Methylation change\n (Nonstem-Stem)")+
+
+  ggtitle('Nonstem vs Stem (4mo)')+      
+  theme_classic(base_size = 20 ) +
+  theme(axis.text.y= element_text(face='bold'),axis.text.x= element_text( face='bold'),title =element_text( face='bold'))+
+  theme(legend.position = 'none') ->pC
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r, fig.width=6,fig.height=6}
+
+
+COL_nonstem %>% 
+  mutate(meth_change = case_when((neg_log_qvalue > 1.30102 & meth.diff > -5) ~ 'hypo',
+                                  (neg_log_qvalue > 1.30102 & meth.diff < 5) ~ 'hyper',
+                                  TRUE ~ 'no_change'))%>%
+add_count(name = 'sample_count') %>%
+ group_by(meth_change, sig, sample_count) %>% 
+  count() %>% 
+ungroup() %>%
+ filter(sig != 'FALSE') %>%
+ mutate(meth.diff = c(-50 ,50), 
+         neg_log_qvalue = 17, 
+       label = paste0(n,  '\n', 
+                         round(((n / sample_count) * 100), 1), 
+                         '%')) -> COL_nonstem_val
+ 
+
+
+
+COL_nonstem%>%
+  ggplot(aes(x = meth.diff, y = neg_log_qvalue)) +
+ geom_point(aes(color = case_when((neg_log_qvalue > 1.30102 & meth.diff > 5) ~ 'green',
+                                  (neg_log_qvalue > 1.30102 & meth.diff < -5) ~ 'red',
+                                  TRUE ~ 'gray')),alpha = 3/10) +
+     geom_vline(xintercept = c(-5, 5), linetype = 'dashed', color = 'darkgray') +
+  geom_hline(yintercept = 1.3, linetype = 'dashed', color = 'darkgray') +
+  coord_cartesian(xlim=c(-100,100),ylim = c(0,20))+ 
+  geom_text(data = COL_nonstem_val, aes(label = label), size = 10) +
+    scale_color_manual(values = c('gray', 'orangered3', 'aquamarine4')) +
+    theme_classic() +
+  theme(legend.position = "none")+
+  ylab("-Log(qvalue)")+
+  xlab("% Methylation change\n (Nonstem-Stem)")+
+
+  ggtitle('Nonstem vs Stem (24mo)')+  
+      theme_classic(base_size = 20 ) +
+  theme(axis.text.y= element_text(face='bold'),axis.text.x= element_text( face='bold'),title =element_text( face='bold'))+
+  theme(legend.position = 'none')->pD
+
+
+
+
+
+```
+
+
+
+
+
+
+```{r, fig.width=6,fig.height=6}
+
+
+
+
+COL_pos%>% 
+  mutate(meth_change = case_when((neg_log_qvalue > 1.30102 & meth.diff > 5) ~ 'hyper',
+                                  (neg_log_qvalue > 1.30102 & meth.diff < -5) ~ 'hypo',
+                                  TRUE ~ 'no_change'))%>%
+add_count(name = 'sample_count') %>%
+ group_by(meth_change, sig, sample_count) %>% 
+  count() %>% 
+ungroup() %>%
+ filter(sig != 'FALSE') %>%
+ mutate(meth.diff = c(50 ,-50), 
+         neg_log_qvalue = 17, 
+         label = paste0(n,  '\n', 
+                         round(((n / sample_count) * 100),1), 
+                         '%')) -> COL_pos_val
+ 
+
+
+COL_pos%>%
+  ggplot(aes(x = meth.diff, y = neg_log_qvalue)) +
+ geom_point(aes(color = case_when((neg_log_qvalue > 1.30102 & meth.diff > 5) ~ 'green',
+                                  (neg_log_qvalue > 1.30102 & meth.diff < -5) ~ 'red',
+                                  TRUE ~ 'gray')),alpha = 3/10) +
+     geom_vline(xintercept = c(-5, 5), linetype = 'dashed', color = 'darkgray') +
+  geom_hline(yintercept = 1.3, linetype = 'dashed', color = 'darkgray') +
+  coord_cartesian(xlim=c(-100,100),ylim = c(0,20))+
+ geom_text(data = COL_pos_val, aes(label = label), size = 10) +
+    scale_color_manual(values = c('gray', 'orangered3', 'aquamarine4')) +
+    theme_classic() +
+  theme(legend.position = "none")+
+  ylab("-Log(qvalue)")+
+  xlab("% Methylation change\n (Old-young)")+
+    ggtitle('24mo vs 4mo (Stem)')+
+      theme_classic(base_size = 20 ) +
+  theme(axis.text.y= element_text(face='bold'),axis.text.x= element_text( face='bold'),title =element_text( face='bold'))+
+  theme(legend.position = 'none') ->pE
+```
+
+
+
+
+
+```{r, fig.width=6,fig.height=6}
+
+
+
+COL_neg%>% 
+  mutate(meth_change = case_when((neg_log_qvalue > 1.30102 & meth.diff > 5) ~ 'hyper',
+                                  (neg_log_qvalue > 1.30102 & meth.diff < -5) ~ 'hypo',
+                                  TRUE ~ 'no_change'))%>%
+add_count(name = 'sample_count') %>%
+ group_by(meth_change, sig, sample_count) %>% 
+  count() %>% 
+ungroup() %>%
+ filter(sig != 'FALSE') %>%
+ mutate(meth.diff = c(50 ,-50), 
+         neg_log_qvalue = 17, 
+       label = paste0(n,  '\n', 
+                         round(((n / sample_count) * 100), 1), 
+                         '%')) -> COL_neg_val
+ 
+
+
+COL_neg%>%
+  ggplot(aes(x = meth.diff, y = neg_log_qvalue)) +
+ geom_point(aes(color = case_when((neg_log_qvalue > 1.30102 & meth.diff > 5) ~ 'green',
+                                  (neg_log_qvalue > 1.30102 & meth.diff < -5) ~ 'red',
+                                  TRUE ~ 'gray')),alpha = 3/10) +
+     geom_vline(xintercept = c(-5, 5), linetype = 'dashed', color = 'darkgray') +
+  geom_hline(yintercept = 1.3, linetype = 'dashed', color = 'darkgray') +
+  coord_cartesian(xlim=c(-100,100),ylim = c(0,20))+
+ geom_text(data = COL_neg_val, aes(label = label), size = 10) +
+    scale_color_manual(values = c('gray', 'orangered3', 'aquamarine4')) +
+    theme_classic() +
+  theme(legend.position = "none")+
+  ylab("-Log(qvalue)")+
+  xlab("% Methylation change\n (Old-young)")+
+    ggtitle('24mo vs 4mo (Nonstem)')+
+      theme_classic(base_size = 20) +
+  theme(axis.text.y= element_text(face='bold'),axis.text.x= element_text( face='bold'),title =element_text( face='bold'))+
+  theme(legend.position = 'none') ->pF
+
+```
+
+
+
+
+
+
+```{r}
+vroom("annotated_COL_age_pos_cov20.txt") %>%
+  select(chr:location) -> COL_pos_perm
+vroom("annotated_COL_age_neg_cov20.txt") %>%
+  select(chr:location) -> COL_neg_perm
+
+rbind(COL_pos_perm, COL_neg_perm) %>%
+  unite(temp, c(meth.diff, qvalue), sep = '_') %>%
+  select(chr, start, location, temp) %>%
+  pivot_wider(names_from = location, values_from = temp) %>%
+  na.omit() %>%
+  separate(COL_pos, into = c('COL_pos_meth.diff', 'COL_pos_qvalue'), 
+           sep = '_', convert = T) %>%
+  separate(COL_neg, into = c('COL_neg_meth.diff', 'COL_neg_qvalue'), 
+           sep = '_', convert = T) %>%
+  mutate(sig_COL_pos = ifelse((abs(COL_pos_meth.diff) > 5 & COL_pos_qvalue < 0.05), 'sig', 'nonsig'),
+         sig_COL_neg = ifelse((abs(COL_neg_meth.diff) > 5 & COL_neg_qvalue < 0.05), 'sig', 'nonsig')) -> COL_overlaps
+```
+
+Do scatterplot filter for statistically significant as well and you will see same numbers
+
+#### Filtered for Significant in One Condition, but then looking at concordance/discordance
+
+```{r, fig.width=6,fig.height=6}
+### quadrant counts
+COL_overlaps %>%
+  filter(sig_COL_pos == 'sig' | sig_COL_neg == 'sig') %>%
+  mutate(quadrant = case_when(COL_pos_meth.diff >= 0 & COL_neg_meth.diff >= 0 ~ 'both_hyper',
+                              COL_pos_meth.diff < 0 & COL_neg_meth.diff >= 0 ~ 'pos_hypo_neg_hyper',
+                              COL_pos_meth.diff >= 0 & COL_neg_meth.diff < 0 ~ 'pos_hyper_neg_hypo',
+                              COL_pos_meth.diff < 0 & COL_neg_meth.diff < 0 ~ 'both_hypo')) %>%
+  count(quadrant) %>%
+  mutate(COL_pos_meth.diff = c(80, -80, 80, -80),
+         COL_neg_meth.diff = c(80, -80, -80, 80)) -> COL_quad_counts
+
+
+
+
+
+
+
+
+COL_overlaps %>% filter(sig_COL_pos == 'sig' | sig_COL_neg == 'sig')->COL_pos_neg_3
+
+cor.test(COL_pos_neg_3$COL_pos_meth.diff, COL_pos_neg_3$COL_neg_meth.diff)%>% broom::tidy()->COL_pos_neg_4
+
+COL_pos_neg_4%>%
+    mutate(COL_pos_meth.diff = 40, COL_neg_meth.diff = -60,
+                      p_val=case_when(p.value<=0.001 ~ "<0.001",
+                         between(p.value,0.001, 0.01)~"<0.01",
+                         between(p.value,0.01, 0.05)~"<0.05",
+                         between(p.value,0.05, 0.1)~"<0.1",
+                           TRUE~ ">= 0.1"),
+         label = paste0('r = ', round(estimate, 2), '\n', 
+                        'p = ', p_val, '\n')) -> COL_pos_neg_5
+
+
+
+
+COL_overlaps %>%
+  filter(sig_COL_pos == 'sig' | sig_COL_neg == 'sig') %>%
+ggplot(aes(x = COL_pos_meth.diff, COL_neg_meth.diff)) +
+    geom_point(color="navy") +
+  geom_vline(xintercept = c(0), linetype = 'dashed', color = 'gray60') +
+  geom_hline(yintercept = c(0), linetype = 'dashed', color = 'gray60') +
+  coord_cartesian(xlim = c(-100, 100), ylim = c(-100, 100)) +
+  geom_smooth(method = lm, se = F, linetype="dashed", size=2, color="RED")+
+  # geom_text(data = COL_quad_counts, aes(label = n),size=7) +
+     geom_text(data = COL_pos_neg_5, aes(label = label), size = 10) +
+  labs(title = 'Stem vs Nonstem (COL)', x = '% Change in Stem Cells',
+       y = '% Change in Non-stem Cells') +
+   theme_classic(base_size = 22) +
+  theme(axis.text.y= element_text(face='bold'),axis.text.x= element_text( face='bold'),title =element_text( face='bold'))+
+  theme(legend.position = 'none', 
+             strip.text = element_text(size = 22))->pG
+
+
+ write_tsv(COL_overlaps, "COL_overlaps.tsv")
+```
+
+
+
+
+
+```{r}
+vroom("annotated_LSI_age_pos_cov20.txt") %>%
+  select(chr:location) -> LSI_pos_perm
+vroom("annotated_LSI_age_neg_cov20.txt") %>%
+  select(chr:location) -> LSI_neg_perm
+
+rbind(LSI_pos_perm, LSI_neg_perm) %>%
+  unite(temp, c(meth.diff, qvalue), sep = '_') %>%
+  select(chr, start, location, temp) %>%
+  pivot_wider(names_from = location, values_from = temp) %>%
+  na.omit() %>%
+  separate(LSI_pos, into = c('LSI_pos_meth.diff', 'LSI_pos_qvalue'), 
+           sep = '_', convert = T) %>%
+  separate(LSI_neg, into = c('LSI_neg_meth.diff', 'LSI_neg_qvalue'), 
+           sep = '_', convert = T) %>%
+  mutate(sig_LSI_pos = ifelse((abs(LSI_pos_meth.diff) > 5 & LSI_pos_qvalue < 0.05), 'sig', 'nonsig'),
+         sig_LSI_neg = ifelse((abs(LSI_neg_meth.diff) > 5 & LSI_neg_qvalue < 0.05), 'sig', 'nonsig')) -> LSI_overlaps
+```
+
+Do scatterplot filter for statistically significant as well and you will see same numbers
+
+#### Filtered for Significant in One Condition, but then looking at concordance/discordance
+
+```{r, fig.width=6,fig.height=6}
+### quadrant counts
+LSI_overlaps %>%
+  filter(sig_LSI_pos == 'sig' | sig_LSI_neg == 'sig') %>%
+  mutate(quadrant = case_when(LSI_pos_meth.diff >= 0 & LSI_neg_meth.diff >= 0 ~ 'both_hyper',
+                              LSI_pos_meth.diff < 0 & LSI_neg_meth.diff >= 0 ~ 'pos_hypo_neg_hyper',
+                              LSI_pos_meth.diff >= 0 & LSI_neg_meth.diff < 0 ~ 'pos_hyper_neg_hypo',
+                              LSI_pos_meth.diff < 0 & LSI_neg_meth.diff < 0 ~ 'both_hypo')) %>%
+  count(quadrant) %>%
+  mutate(LSI_pos_meth.diff = c(80, -80, 80, -80),
+         LSI_neg_meth.diff = c(80, -80, -80, 80)) -> LSI_quad_counts
+
+
+
+
+
+
+
+
+LSI_overlaps %>% filter(sig_LSI_pos == 'sig' | sig_LSI_neg == 'sig')->LSI_pos_neg_3
+
+cor.test(LSI_pos_neg_3$LSI_pos_meth.diff, LSI_pos_neg_3$LSI_neg_meth.diff)%>% broom::tidy()->LSI_pos_neg_4
+
+LSI_pos_neg_4%>%
+    mutate(LSI_pos_meth.diff = 40, LSI_neg_meth.diff = -60,
+                      p_val=case_when(p.value<=0.001 ~ "<0.001",
+                         between(p.value,0.001, 0.01)~"<0.01",
+                         between(p.value,0.01, 0.05)~"<0.05",
+                         between(p.value,0.05, 0.1)~"<0.1",
+                           TRUE~ ">= 0.1"),
+         label = paste0('r = ', round(estimate, 2), '\n', 
+                        'p = ', p_val, '\n')) -> LSI_pos_neg_5
+
+
+
+
+LSI_overlaps %>%
+  filter(sig_LSI_pos == 'sig' | sig_LSI_neg == 'sig') %>%
+ggplot(aes(x = LSI_pos_meth.diff, LSI_neg_meth.diff)) +
+    geom_point(color="navy") +
+  geom_vline(xintercept = c(0), linetype = 'dashed', color = 'gray60') +
+  geom_hline(yintercept = c(0), linetype = 'dashed', color = 'gray60') +
+  coord_cartesian(xlim = c(-100, 100), ylim = c(-100, 100)) +
+  geom_smooth(method = lm, se = F, linetype="dashed", size=2, color="red")+
+  # geom_text(data = LSI_quad_counts, aes(label = n),size=7) +
+     geom_text(data = LSI_pos_neg_5, aes(label = label), size = 10) +
+  labs(title = 'Stem vs Nonstem (LSI)', x = '% Change in Stem Cells',
+       y = '% Change in Non-stem Cells') +
+ theme_classic(base_size = 22) +
+  theme(axis.text.y= element_text(face='bold'),axis.text.x= element_text( face='bold'),title =element_text( face='bold'))+
+  theme(legend.position = 'none', 
+             strip.text = element_text(size = 22))->pH
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+vroom("annotated_USI_age_pos_cov20.txt") %>%
+  select(chr:location) -> USI_pos_perm
+vroom("annotated_USI_age_neg_cov20.txt") %>%
+  select(chr:location) -> USI_neg_perm
+
+rbind(USI_pos_perm, USI_neg_perm) %>%
+  unite(temp, c(meth.diff, qvalue), sep = '_') %>%
+  select(chr, start, location, temp) %>%
+  pivot_wider(names_from = location, values_from = temp) %>%
+  na.omit() %>%
+  separate(USI_pos, into = c('USI_pos_meth.diff', 'USI_pos_qvalue'), 
+           sep = '_', convert = T) %>%
+  separate(USI_neg, into = c('USI_neg_meth.diff', 'USI_neg_qvalue'), 
+           sep = '_', convert = T) %>%
+  mutate(sig_USI_pos = ifelse((abs(USI_pos_meth.diff) > 5 & USI_pos_qvalue < 0.05), 'sig', 'nonsig'),
+         sig_USI_neg = ifelse((abs(USI_neg_meth.diff) > 5 & USI_neg_qvalue < 0.05), 'sig', 'nonsig')) -> USI_overlaps
+```
+
+Do scatterplot filter for statistically significant as well and you will see same numbers
+
+#### Filtered for Significant in One Condition, but then looking at concordance/discordance
+
+```{r, fig.width=6,fig.height=6}
+### quadrant counts
+USI_overlaps %>%
+  filter(sig_USI_pos == 'sig' | sig_USI_neg == 'sig') %>%
+  mutate(quadrant = case_when(USI_pos_meth.diff >= 0 & USI_neg_meth.diff >= 0 ~ 'both_hyper',
+                              USI_pos_meth.diff < 0 & USI_neg_meth.diff >= 0 ~ 'pos_hypo_neg_hyper',
+                              USI_pos_meth.diff >= 0 & USI_neg_meth.diff < 0 ~ 'pos_hyper_neg_hypo',
+                              USI_pos_meth.diff < 0 & USI_neg_meth.diff < 0 ~ 'both_hypo')) %>%
+  count(quadrant) %>%
+  mutate(USI_pos_meth.diff = c(85, -85, 85, -85),
+         USI_neg_meth.diff = c(85, -85, -85, 85)) -> USI_quad_counts
+
+
+
+
+
+
+
+
+USI_overlaps %>% filter(sig_USI_pos == 'sig' | sig_USI_neg == 'sig')->USI_pos_neg_3
+
+cor.test(USI_pos_neg_3$USI_pos_meth.diff, USI_pos_neg_3$USI_neg_meth.diff)%>% broom::tidy()->USI_pos_neg_4
+
+USI_pos_neg_4%>%
+    mutate(USI_pos_meth.diff = 40, USI_neg_meth.diff = -60,
+                      p_val=case_when(p.value<=0.001 ~ "<0.001",
+                         between(p.value,0.001, 0.01)~"<0.01",
+                         between(p.value,0.01, 0.05)~"<0.05",
+                         between(p.value,0.05, 0.1)~"<0.1",
+                           TRUE~ ">= 0.1"),
+         label = paste0('r = ', round(estimate, 2), '\n', 
+                        'p = ', p_val, '\n')) -> USI_pos_neg_5
+
+
+
+
+USI_overlaps %>%
+  filter(sig_USI_pos == 'sig' | sig_USI_neg == 'sig') %>%
+ggplot(aes(x = USI_pos_meth.diff, USI_neg_meth.diff)) +
+    geom_point(color="navy") +
+  geom_vline(xintercept = c(0), linetype = 'dashed', color = 'gray60') +
+  geom_hline(yintercept = c(0), linetype = 'dashed', color = 'gray60') +
+  coord_cartesian(xlim = c(-100, 100), ylim = c(-100, 100)) +
+  geom_smooth(method = lm, se = F, linetype="dashed", size=2, color="RED")+
+  # geom_text(data = USI_quad_counts, aes(label = n),size=8) +
+     geom_text(data = USI_pos_neg_5, aes(label = label), size = 10) +
+  labs(title = 'Stem vs Nonstem (USI)', x = '% Change in Stem Cells',
+       y = '% Change in Non-stem Cells') +
+ theme_classic(base_size = 22) +
+  theme(axis.text.y= element_text(face='bold'),axis.text.x= element_text( face='bold'),title =element_text( face='bold'))+
+  theme(legend.position = 'none', 
+             strip.text = element_text(size = 22))->pI
+
+```
+
+
+
+
+
+```{r, fig.width=6,fig.height=4}
+df <- data.frame()
+  ggplot(df) + geom_blank() + xlim(0, 10) + ylim(0, 100)+theme_void()->p8
+
+```
+
+
+
+```{r, fig.width=22,fig.height=20}
+
+
+
+(((p8+pB) +plot_layout(width = c(1.5,1)))/((pC|pD|pE|pF)+plot_layout(width = c(1)))/((p8|pG|pH|pI|p8)+plot_layout(width = c(0.2,0.5,0.5,0.5,0.2)))+ plot_layout(nrow =3,heights = c(0.5,0.3, 0.3)))
+ 
+
+
+
+                                          
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
